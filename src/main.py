@@ -1,0 +1,140 @@
+from scipy.optimize import minimize_scalar
+
+import numpy as np
+import math
+
+from constants import(
+    X, Y,
+    X_GRIDS, Y_GRIDS,
+)
+
+from timer import Time
+from plotter import Plotter
+from robot import Robot
+from world import World
+
+def plan(my_world, pltr):
+    my_world.generate_paths()
+    for robot in my_world.robots:
+        pltr.draw_start_end(robot)
+    pltr.sleep(2)
+    for robot in my_world.robots:
+        for point in robot.path:
+            pltr.plotting(point[0], point[1], 'k')
+    pltr.sleep(2)
+
+    TIME = 2
+    MAX_VEL = 5
+    makespan = 0
+    for robot in my_world.robots:
+        x = [p[0] for p in robot.path]
+        y = [p[1] for p in robot.path]
+        t = np.linspace(0, TIME, len(robot.path))
+        p = np.polyfit(t, zip(x, y), 3)
+        poly1d_x = np.poly1d(p[:,0])
+        poly1d_y = np.poly1d(p[:,1])
+
+        dx = np.polyder(poly1d_x)
+        dy = np.polyder(poly1d_y)
+        velocity_sq = dx * dx + dy * dy
+
+        duration = TIME
+        res = minimize_scalar(-1 * velocity_sq, bounds=(0, TIME), method='bounded')
+        max_velocity = velocity_sq(res.x)**0.5
+
+        duration = TIME * max_velocity/MAX_VEL
+        if duration > makespan:
+            makespan = duration
+        scaling_polynomial = np.poly1d([MAX_VEL/max_velocity, 0])
+        poly1d_x = np.polyval(poly1d_x, scaling_polynomial)
+        poly1d_y = np.polyval(poly1d_y, scaling_polynomial)
+        dx = np.polyder(poly1d_x)
+        dy = np.polyder(poly1d_y)
+        robot.trajectory = [duration, poly1d_x, poly1d_y, dx, dy]
+
+    for t in range(100):
+        for robot in my_world.robots:
+            # print robot.trajectory[1](t*makespan/1000), robot.trajectory[2](t*makespan/1000)
+            if robot.trajectory[0] >= t*makespan/100:
+                pltr.plotting(robot.trajectory[1](t*makespan/100), robot.trajectory[2](t*makespan/100), robot.color, 5)
+        # pltr.sleep(0.001)
+    pltr.sleep(2)
+    pltr.close('all')
+    my_world.detect_collision()
+
+def curvature(x, y, t):
+    x_dot = np.polyder(x);  y_dot = np.polyder(y)
+    x_ddot = np.polyder(x_dot); y_ddot = np.polyder(y_dot)
+    return (x_dot(t)*y_ddot(t) - y_dot(t)*x_ddot(t))/(x_dot(t)**2 + y_dot(t)**2)**1.5
+
+def execute(my_world):
+    pltr = Plotter()
+    for robot in my_world.robots:
+        pltr.draw_start_end(robot)
+    makespan = max(robot.trajectory[0] for robot in my_world.robots)
+    for t in range(100):
+        for robot in my_world.robots:
+            # print robot.trajectory[1](t*makespan/1000), robot.trajectory[2](t*makespan/1000)
+            if robot.trajectory[0] >= t*makespan/100:
+                pltr.plotting(robot.trajectory[1](t*makespan/100), robot.trajectory[2](t*makespan/100), 'k')
+
+    for robot in my_world.robots:
+        robot.pose[2] = math.atan2(robot.trajectory[4](0), robot.trajectory[3](0))
+        # pltr.arrow(robot.trajectory[1](0), robot.trajectory[2](0), robot.pose[2])
+    completed = set()
+    while True:
+        for robot in my_world.robots:
+            del_x = robot.goal[0] - robot.pose[0]
+            del_y = robot.goal[1] - robot.pose[1]
+            rho = math.sqrt(del_x**2 + del_y**2)
+
+            if abs(rho) < 0.25:
+                completed.add(robot.id)
+                continue
+
+            t = my_world.time.time()
+            for pt_id, pt in enumerate(robot.collision_points):
+                if ((robot.pose[0] - pt[0])**2 + (robot.pose[1] - pt[1])**2)**0.5 < 1:
+                    if robot.collision_priority[pt_id] == 'inc':
+                        scaling_polynomial = np.poly1d([2, -t])
+                    else:
+                        scaling_polynomial = np.poly1d([0.5, t/2])
+                    robot.trajectory[1] = np.polyval(robot.trajectory[1], scaling_polynomial)
+                    robot.trajectory[2] = np.polyval(robot.trajectory[2], scaling_polynomial)
+                    robot.trajectory[3], robot.trajectory[4] = np.polyder(robot.trajectory[1]), np.polyder(robot.trajectory[2])
+                    del(robot.collision_points[pt_id])
+                    del(robot.collision_priority[pt_id])
+
+            vel = (robot.trajectory[3](t)**2 + robot.trajectory[4](t)**2)**0.5
+            curv = curvature(robot.trajectory[1], robot.trajectory[2], t)
+            robot.cmd_vel(vel, curv*vel)
+            robot.update_step(my_world.time.dt)
+            # print robot
+
+            pltr.plotting(robot.pose[0], robot.pose[1], robot.color, s=5)
+            pltr.mark_time(my_world.time.time())
+        pltr.sleep(0.001)
+        my_world.time.step()
+
+        if completed == set(range(len(my_world.robots))):
+            pltr.sleep(3)
+            pltr.close('all')
+            break
+
+def main():
+    time = Time(0.01)
+    colors = 'bgrcmyk'
+
+    pltr = Plotter()
+
+    robot_1 = Robot(1, [2, 2, 0], [8, 6, 0], colors[0])
+    robot_2 = Robot(2, [8, 2, 0], [2, 6, 0], colors[1])
+
+    my_world = World([robot_1, robot_2], time)
+
+    plan(my_world, pltr)
+    execute(my_world)
+
+
+if __name__ == "__main__":
+    main()
