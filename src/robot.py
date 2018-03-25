@@ -26,6 +26,7 @@ class Robot():
         self.trajectory = None
 
         self.collision_points = []; self.collision_priority = []
+        self.collision_with = [];   self.collision_impending = []
 
         self.initialize_planner()
 

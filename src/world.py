@@ -60,11 +60,15 @@ class World:
                 t = i*time/1000
                 x1, y1 = r1_x(t), r1_y(t)
                 x2, y2 = r2_x(t), r2_y(t)
-                if ((x1 - x2)**2 + (y1 - y2)**2)**0.5 < 0.1:
+                if ((x1 - x2)**2 + (y1 - y2)**2)**0.5 < 0.3:
                     self.collision.append([(r1.id, r2.id), (x1, y1)])
                     r1.collision_points.append((x1, y1))
+                    r1.collision_impending.append((x1, y1))
+                    r1.collision_with.append(r2)
                     r2.collision_points.append((x2, y2))
-                    if r1.id > r2.id:
+                    r2.collision_impending.append((x2, y2))
+                    r2.collision_with.append(r1)
+                    if r1.id < r2.id:
                         r1.collision_priority.append('inc')
                         r2.collision_priority.append('dec')
                     else:
