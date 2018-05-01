@@ -2,66 +2,50 @@ import numpy as np
 import itertools
 import heapq
 
+from trajectory import Trajectory
+from rrt import RRT
+from astar import Astar
 from constants import(
     X, Y,
     X_GRIDS, Y_GRIDS,
+    COLLISION_MARGIN,
+    MAX_VEL,
 )
 
 class World:
 
-    def __init__(self, robots, time):
+    def __init__(self, robots, time, obstacles=[]):
         self.robots = robots
         self.time = time
         self.x_range = [0, X]
         self.y_range = [0, Y]
-        self.obstacles = []
+        self.obstacles = obstacles
         self.collision = []
         # self.pltr = Plotter()
 
-    def is_obstacle(self, location):
-        return location in self.obstacles
-
-    def planning_iteration(self, robot):
-        current = heapq.heappop(robot.open_list)[1]
-        if(current[0] == robot.goal_for_planner[0] and current[1] == robot.goal_for_planner[1]):
-            while current in robot.came_from:
-                robot.path.append([current[0]*X/X_GRIDS, current[1]*Y/Y_GRIDS])
-                current = robot.came_from[current]
-            robot.path.reverse()
-            return 1
-        for i,j in robot.directions:
-            neighbor = (current[0]+i,current[1]+j)
-            if neighbor[0] < 0 or neighbor[0] >= X_GRIDS or neighbor[1] < 0 or neighbor[1] >= Y_GRIDS:
-                continue
-            if self.is_obstacle(neighbor):
-                continue
-            if neighbor not in robot.cost or robot.cost.get(neighbor,0) > robot.cost[current]+1:
-                robot.came_from[neighbor] = current
-                robot.cost[neighbor] = robot.cost[current]+1
-                priority = robot.cost[neighbor] + robot.heuristic(neighbor)
-                heapq.heappush(robot.open_list,(priority,neighbor))
-        return 0
-
-    def generate_paths(self):
-        completed = set()
-        while completed != set(range(len(self.robots))):
-            for robot_id, robot in enumerate(self.robots):
-                if robot_id not in completed:
-                    if self.planning_iteration(robot):
-                        completed.add(robot_id)
+    def generate_paths(self, algo="a-star"):
+        if algo == "a-star":
+            for robot in self.robots:
+                astar = Astar(robot.pose, robot.goal, self.obstacles)
+                robot.path = astar.generate_path()
+        elif algo == "rrt":
+            for robot in self.robots:
+                rrt = RRT(robot.pose, robot.goal, self.obstacles)
+                robot.path = rrt.generate_path()
+        else:
+            print "No such algo currently exists."
+            return
 
 
     def detect_collision(self):
         for r1, r2 in itertools.combinations(self.robots, 2):
-            time = min(r1.trajectory[0], r2.trajectory[0])
-            r1_x, r1_y = r1.trajectory[1], r1.trajectory[2]
-            r2_x, r2_y = r2.trajectory[1], r2.trajectory[2]
+            time = min(r1.trajectory.total_time, r2.trajectory.total_time)
             for i in range(1000):
                 t = i*time/1000
-                x1, y1 = r1_x(t), r1_y(t)
-                x2, y2 = r2_x(t), r2_y(t)
-                if ((x1 - x2)**2 + (y1 - y2)**2)**0.5 < 0.3:
-                    self.collision.append([(r1.id, r2.id), (x1, y1)])
+                x1, y1 = r1.trajectory.location(t)
+                x2, y2 = r2.trajectory.location(t)
+                if ((x1 - x2)**2 + (y1 - y2)**2)**0.5 < COLLISION_MARGIN:
+                    self.collision.append([(r1.id, r2.id), (x1, y1), t])
                     r1.collision_points.append((x1, y1))
                     r1.collision_impending.append((x1, y1))
                     r1.collision_with.append(r2)
@@ -75,4 +59,24 @@ class World:
                         r1.collision_priority.append('dec')
                         r2.collision_priority.append('inc')
                     break
-        print self.collision
+        # print self.collision
+
+    def avoid_collision(self):
+        for r1, r2 in itertools.combinations(self.robots, 2):
+            time = min(r1.trajectory.total_time, r2.trajectory.total_time)
+            for i in range(1000):
+                t = i*time/1000
+                x1, y1 = r1.trajectory.location(t)
+                x2, y2 = r2.trajectory.location(t)
+                if ((x1 - x2)**2 + (y1 - y2)**2)**0.5 < COLLISION_MARGIN:
+                    r1.trajectory.slow_trajectory(t - 3*COLLISION_MARGIN/MAX_VEL)
+                    # print "R1", r1.id, r1.trajectory.check_continuity()
+                    r1.trajectory.fast_trajectory(t + 0*COLLISION_MARGIN/MAX_VEL)
+                    # print "R1", r1.id, r1.trajectory.check_continuity()
+                    r2.trajectory.fast_trajectory(t - 3*COLLISION_MARGIN/MAX_VEL)
+                    # print "R2", r2.id, r2.trajectory.check_continuity()
+                    r2.trajectory.slow_trajectory(t + 0*COLLISION_MARGIN/MAX_VEL)
+                    # print "R2", r2.id, r2.trajectory.check_continuity()
+                    # print "-----------------"
+        if self.detect_collision():
+            self.avoid_collision()
