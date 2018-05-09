@@ -17,7 +17,8 @@ class Astar:
         self.start = (math.floor(start[0]/grid_size_x), math.floor(start[1]/grid_size_y))
         self.goal = (math.floor(goal[0]/grid_size_x), math.floor(goal[1]/grid_size_y))
         self.obstacles = []
-        self.square_obs(*obstacles)
+        if obstacles:
+            self.square_obs(*obstacles)
 
         self.directions = [(-1,0),(0,-1),(0,1),(1,0),(-1,-1),(-1,1),(1,-1),(1,1)]
 

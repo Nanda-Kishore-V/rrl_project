@@ -20,8 +20,8 @@ class RRT:
         self.start = RRT_node(start, None)
         self.goal = RRT_node(goal, None)
         self.obstacles = []
-
-        self.square_obs(*obstacles)
+        if obstacles:
+            self.square_obs(*obstacles)
 
         self.min_distance = min_dist
         self.threshold = thresh

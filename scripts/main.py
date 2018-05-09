@@ -24,11 +24,12 @@ def plan(my_world, pltr, algo):
     my_world.generate_paths(algo=algo)
     for robot in my_world.robots:
         pltr.draw_start_end(robot.pose, robot.goal, robot.color)
-    l, w, start = my_world.obstacles
-    obstacles = [((i*0.1*l)+start[0], (j*0.1*w)+start[1]) for i in range(10) for j in range(10)]
-    for obs in obstacles:
-        pltr.plotting(obs[0], obs[1], 'r')
-    pltr.sleep(2)
+    if my_world.obstacles:
+        l, w, start = my_world.obstacles
+        obstacles = [((i*0.1*l)+start[0], (j*0.1*w)+start[1]) for i in range(10) for j in range(10)]
+        for obs in obstacles:
+            pltr.plotting(obs[0], obs[1], 'r')
+        pltr.sleep(2)
     for robot in my_world.robots:
         for point in robot.path:
             pltr.plotting(point[0], point[1], 'k')
@@ -159,7 +160,8 @@ def main():
 
     pltr = Plotter()
 
-    obstacles = [1,1,(5,4)]
+    # obstacles = [1,1,(5,4)]
+    obstacles = []
 
     print "Case 1: A-star"
 
